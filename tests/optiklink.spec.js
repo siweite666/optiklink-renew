@@ -79,7 +79,7 @@ test('OptikLink 自动登录保活', async () => {
 
     // ── 3. 打开 OptikLink 登录 ─────────────────────────────
     console.log('🔗 [2/5] 访问 OptikLink 登录...');
-    await page.goto('https://optiklink.net/login', { waitUntil: 'domcontentloaded' });
+    await page.goto('https://optiklink.com/login', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(3000);
 
     // ── 4. 处理 OAuth 授权 ─────────────────────────────────
@@ -137,7 +137,7 @@ test('OptikLink 自动登录保活', async () => {
     await page.screenshot({ path: 'test-results/optiklink-result.png', fullPage: true });
 
     // ── 判断结果 ───────────────────────────────────────────
-    const isError = finalUrl.includes('/error/') || finalUrl.includes('/login');
+    const isError = finalUrl.includes('/error/') || (finalUrl.includes('/login') && finalUrl.includes('optiklink'));
     const time = nowStr();
 
     if (!isError) {
