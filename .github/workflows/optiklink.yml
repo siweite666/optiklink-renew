@@ -22,11 +22,20 @@ jobs:
           npm install
           npx playwright install chromium --with-deps
 
+      - name: Install v2ray
+        run: |
+          bash <(curl -L https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh)
+          cp v2ray.json /usr/local/etc/v2ray/config.json
+          systemctl start v2ray
+          sleep 2
+          echo "v2ray SOCKS5 proxy on 127.0.0.1:1080"
+          curl -s --socks5 127.0.0.1:1080 --connect-timeout 10 https://api.ipify.org || echo "proxy not ready"
+
       - name: Run login script
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT: ${{ secrets.TG_CHAT_ID }},${{ secrets.TG_BOT_TOKEN }}
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          PROXY_URL: "socks5://127.0.0.1:1080"
         run: npx playwright test
 
       - name: Upload screenshots

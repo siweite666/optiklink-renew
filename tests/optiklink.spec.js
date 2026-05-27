@@ -1,7 +1,6 @@
 // tests/optiklink.spec.js
 const { test, chromium } = require('@playwright/test');
 const https = require('https');
-const { anonymizeProxy, closeAnonymizedProxy } = require('proxy-chain');
 
 const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || '').trim();
 const [TG_CHAT_ID, TG_TOKEN] = (process.env.TG_BOT || ',').split(',').map(s => s.trim());
@@ -32,17 +31,10 @@ function sendTG(msg) {
 test('OptikLink 自动登录保活', async () => {
   if (!DISCORD_TOKEN) throw new Error('❌ 缺少 DISCORD_TOKEN');
 
-  let localProxyUrl = null;
-  if (PROXY_URL) {
-    console.log('🔗 [0] 启动代理隧道...');
-    localProxyUrl = await anonymizeProxy(PROXY_URL);
-    console.log(`  代理: ${localProxyUrl}`);
-  }
+  const proxyConfig = PROXY_URL ? { server: PROXY_URL } : undefined;
+  if (proxyConfig) console.log(`🔗 使用代理: ${PROXY_URL}`);
 
-  const browser = await chromium.launch({
-    headless: true,
-    proxy: localProxyUrl ? { server: localProxyUrl } : undefined,
-  });
+  const browser = await chromium.launch({ headless: true, proxy: proxyConfig });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   });
@@ -62,23 +54,12 @@ test('OptikLink 自动登录保活', async () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(5000);
 
-    // Debug: 截图 Discord 状态
+    console.log(`🔍 Discord URL: ${page.url()}`);
     await page.screenshot({ path: 'test-results/discord-after-login.png' });
-    console.log(`🔍 Discord 当前 URL: ${page.url()}`);
-
-    // 尝试通过 API 验证 token
-    const apiCheck = await page.evaluate(async (tok) => {
-      try {
-        const res = await fetch('https://discord.com/api/v9/users/@me', { headers: { Authorization: tok } });
-        return { ok: res.ok, status: res.status, url: window.location.href };
-      } catch(e) { return { error: e.message, url: window.location.href }; }
-    }, DISCORD_TOKEN);
-    console.log(`🔍 API 检查: ${JSON.stringify(apiCheck)}`);
 
     if (page.url().includes('login')) {
-      // 可能是需要验证，等更久再试
+      // 可能需要更长时间加载
       await page.waitForTimeout(5000);
-      await page.screenshot({ path: 'test-results/discord-still-login.png' });
       if (page.url().includes('login')) {
         throw new Error(`Discord Token 失效，URL: ${page.url()}`);
       }
@@ -107,7 +88,6 @@ test('OptikLink 自动登录保活', async () => {
       console.log('🔐 [3/5] OAuth 授权页，点击 Authorize...');
       await page.waitForTimeout(2000);
 
-      // 点击 Authorize 按钮，用 waitForNavigation 包裹
       for (let i = 0; i < 8; i++) {
         if (!page.url().includes('discord.com')) break;
 
@@ -126,9 +106,7 @@ test('OptikLink 自动登录保活', async () => {
             const text = (await btn.innerText()).trim();
             if (text.includes('取消') || text.includes('cancel') || text.includes('deny')) continue;
             if (await btn.isDisabled()) continue;
-
             console.log(`  🔘 点击: "${text}"`);
-            // 用 Promise.all 包裹点击和导航
             await Promise.all([
               page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
               btn.click(),
@@ -153,7 +131,6 @@ test('OptikLink 自动登录保活', async () => {
     await page.waitForTimeout(5000);
     const finalUrl = page.url();
     console.log(`📍 最终 URL: ${finalUrl}`);
-
     await page.screenshot({ path: 'test-results/optiklink-result.png', fullPage: true });
 
     // ── 判断结果 ───────────────────────────────────────────
@@ -179,6 +156,5 @@ test('OptikLink 自动登录保活', async () => {
     throw err;
   } finally {
     await browser.close();
-    if (localProxyUrl) await closeAnonymizedProxy(localProxyUrl);
   }
 });
