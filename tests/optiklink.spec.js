@@ -20,15 +20,12 @@ function sendTG(msg) {
     if (!TG_CHAT_ID || !TG_TOKEN) return resolve();
     const body = JSON.stringify({ chat_id: TG_CHAT_ID, text: msg });
     const req = https.request({
-      hostname: 'api.telegram.org',
-      path: `/bot${TG_TOKEN}/sendMessage`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      hostname: 'api.telegram.org', path: `/bot${TG_TOKEN}/sendMessage`,
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
     }, res => { res.resume(); resolve(); });
     req.on('error', () => resolve());
     req.setTimeout(15000, () => { req.destroy(); resolve(); });
-    req.write(body);
-    req.end();
+    req.write(body); req.end();
   });
 }
 
@@ -42,10 +39,10 @@ test('OptikLink 自动登录保活', async () => {
     console.log(`  代理: ${localProxyUrl}`);
   }
 
-  const launchOptions = { headless: true };
-  if (localProxyUrl) launchOptions.proxy = { server: localProxyUrl };
-
-  const browser = await chromium.launch(launchOptions);
+  const browser = await chromium.launch({
+    headless: true,
+    proxy: localProxyUrl ? { server: localProxyUrl } : undefined,
+  });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   });
@@ -65,9 +62,7 @@ test('OptikLink 自动登录保活', async () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(4000);
 
-    if (page.url().includes('login')) {
-      throw new Error('Discord Token 失效，登录失败');
-    }
+    if (page.url().includes('login')) throw new Error('Discord Token 失效');
     console.log('✅ Discord Token 有效');
 
     // ── 2. 获取 Discord 用户名 ─────────────────────────────
@@ -82,82 +77,85 @@ test('OptikLink 自动登录保活', async () => {
       console.log(`👤 用户: ${username}`);
     } catch {}
 
-    // ── 3. 打开 OptikLink 登录（触发 OAuth）───────────────
+    // ── 3. 打开 OptikLink 登录 ─────────────────────────────
     console.log('🔗 [2/5] 访问 OptikLink 登录...');
     await page.goto('https://optiklink.net/login', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(3000);
 
-    // ── 4. 处理 Discord OAuth 授权页 ───────────────────────
+    // ── 4. 处理 OAuth 授权 ─────────────────────────────────
     if (page.url().includes('discord.com/oauth2/authorize')) {
-      console.log('🔐 [3/5] 进入 Discord OAuth 授权页，自动授权...');
+      console.log('🔐 [3/5] OAuth 授权页，点击 Authorize...');
       await page.waitForTimeout(2000);
 
+      // 点击 Authorize 按钮，用 waitForNavigation 包裹
       for (let i = 0; i < 8; i++) {
         if (!page.url().includes('discord.com')) break;
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(500);
 
         const selectors = [
           'button:has-text("Authorize")',
           'button:has-text("授权")',
           'button[type="submit"]',
-          'div[class*="footer"] button',
           'button[class*="primary"]',
         ];
 
+        let clicked = false;
         for (const sel of selectors) {
           try {
             const btn = page.locator(sel).last();
-            if (!await btn.isVisible()) continue;
+            if (!await btn.isVisible({ timeout: 1000 }).catch(() => false)) continue;
             const text = (await btn.innerText()).trim();
             if (text.includes('取消') || text.includes('cancel') || text.includes('deny')) continue;
             if (await btn.isDisabled()) continue;
-            await btn.click();
-            console.log(`  ✅ 点击: "${text}"`);
+
+            console.log(`  🔘 点击: "${text}"`);
+            // 用 Promise.all 包裹点击和导航
+            await Promise.all([
+              page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
+              btn.click(),
+            ]);
+            clicked = true;
             await page.waitForTimeout(2000);
             break;
           } catch { continue; }
         }
-        await page.waitForTimeout(2000);
+        if (!clicked) await page.waitForTimeout(2000);
       }
-    } else if (!page.url().includes('optiklink')) {
-      console.log(`⚠️ 未知跳转: ${page.url()}`);
     }
 
-    // ── 5. 等待回到 OptikLink ──────────────────────────────
+    // ── 5. 确认到达 OptikLink ──────────────────────────────
     console.log('⏳ [4/5] 等待回调...');
-    try {
-      await page.waitForURL(url => url.toString().includes('optiklink'), { timeout: 15000 });
-    } catch {}
+    if (page.url().includes('discord.com')) {
+      try {
+        await page.waitForURL(url => url.toString().includes('optiklink'), { timeout: 15000 });
+      } catch {}
+    }
 
+    await page.waitForTimeout(5000);
     const finalUrl = page.url();
     console.log(`📍 最终 URL: ${finalUrl}`);
-    await page.waitForTimeout(5000);
 
-    // 截图留证
     await page.screenshot({ path: 'test-results/optiklink-result.png', fullPage: true });
 
     // ── 判断结果 ───────────────────────────────────────────
-    const isSuccess = !finalUrl.includes('/error/') && !finalUrl.includes('login');
-    const pageText = await page.evaluate(() => document.body.innerText.substring(0, 500));
-
+    const isError = finalUrl.includes('/error/') || finalUrl.includes('/login');
     const time = nowStr();
-    if (isSuccess) {
+
+    if (!isError) {
       const msg = `✅ OptikLink 登录保活成功\n👤 用户: ${username}\n🕐 时间: ${time}\n📍 URL: ${finalUrl}`;
       console.log(msg);
       await sendTG(msg);
     } else {
-      const msg = `❌ OptikLink 登录失败\n🕐 时间: ${time}\n📍 URL: ${finalUrl}\n📋 ${pageText.substring(0, 100)}`;
+      const pageText = await page.evaluate(() => document.body.innerText.substring(0, 200)).catch(() => '');
+      const msg = `❌ OptikLink 登录失败\n🕐 时间: ${time}\n📍 URL: ${finalUrl}\n📋 ${pageText}`;
       console.error(msg);
       await sendTG(msg);
       throw new Error(`登录失败: ${finalUrl}`);
     }
 
   } catch (err) {
-    const msg = `❌ OptikLink 登录异常\n🕐 ${nowStr()}\n原因: ${err.message}`;
-    console.error(msg);
+    console.error(`❌ 异常: ${err.message}`);
     try { await page.screenshot({ path: 'test-results/optiklink-error.png', fullPage: true }); } catch {}
-    await sendTG(msg);
+    await sendTG(`❌ OptikLink 登录异常\n🕐 ${nowStr()}\n原因: ${err.message}`);
     throw err;
   } finally {
     await browser.close();
