@@ -60,9 +60,29 @@ test('OptikLink 自动登录保活', async () => {
     }, DISCORD_TOKEN);
     await page.waitForTimeout(1000);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(5000);
 
-    if (page.url().includes('login')) throw new Error('Discord Token 失效');
+    // Debug: 截图 Discord 状态
+    await page.screenshot({ path: 'test-results/discord-after-login.png' });
+    console.log(`🔍 Discord 当前 URL: ${page.url()}`);
+
+    // 尝试通过 API 验证 token
+    const apiCheck = await page.evaluate(async (tok) => {
+      try {
+        const res = await fetch('https://discord.com/api/v9/users/@me', { headers: { Authorization: tok } });
+        return { ok: res.ok, status: res.status, url: window.location.href };
+      } catch(e) { return { error: e.message, url: window.location.href }; }
+    }, DISCORD_TOKEN);
+    console.log(`🔍 API 检查: ${JSON.stringify(apiCheck)}`);
+
+    if (page.url().includes('login')) {
+      // 可能是需要验证，等更久再试
+      await page.waitForTimeout(5000);
+      await page.screenshot({ path: 'test-results/discord-still-login.png' });
+      if (page.url().includes('login')) {
+        throw new Error(`Discord Token 失效，URL: ${page.url()}`);
+      }
+    }
     console.log('✅ Discord Token 有效');
 
     // ── 2. 获取 Discord 用户名 ─────────────────────────────
