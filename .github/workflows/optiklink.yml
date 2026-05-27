@@ -24,17 +24,15 @@ jobs:
 
       - name: Install & start v2ray
         run: |
-          # 下载 v2ray-core
           wget -q https://github.com/v2fly/v2ray-core/releases/download/v5.16.1/v2ray-linux-64.zip
           unzip -o v2ray-linux-64.zip -d /usr/local/bin/
           chmod +x /usr/local/bin/v2ray
 
-          # 用配置文件启动（后台运行）
-          /usr/local/bin/v2ray run -config ${{ github.workspace }}/v2ray.json &
-          sleep 3
+          # 从 Secret 写入配置
+          echo '${{ secrets.V2RAY_CONFIG }}' > /tmp/v2ray.json
 
-          # 验证代理可用
-          echo "Testing proxy..."
+          /usr/local/bin/v2ray run -config /tmp/v2ray.json &
+          sleep 3
           curl -s --socks5 127.0.0.1:1080 --connect-timeout 15 https://api.ipify.org || echo "proxy test failed"
 
       - name: Run login script
