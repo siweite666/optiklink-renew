@@ -1,0 +1,12 @@
+{
+  "name": "optiklink-renew",
+  "version": "1.0.0",
+  "description": "OptikLink 免费服务器自动登录保活",
+  "scripts": {
+    "test": "npx playwright test"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.60.0",
+    "proxy-chain": "^2.7.1"
+  }
+}
