@@ -1,10 +1,11 @@
 // tests/optiklink.spec.js
-const { test, expect, chromium } = require('@playwright/test');
+const { test, chromium } = require('@playwright/test');
 const https = require('https');
+const { anonymizeProxy, closeAnonymizedProxy } = require('proxy-chain');
 
 const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || '').trim();
 const [TG_CHAT_ID, TG_TOKEN] = (process.env.TG_BOT || ',').split(',').map(s => s.trim());
-const GOST_PROXY = (process.env.GOST_PROXY || '').trim();
+const PROXY_URL = (process.env.PROXY_URL || '').trim();
 
 function nowStr() {
   return new Date().toLocaleString('zh-CN', {
@@ -34,23 +35,17 @@ function sendTG(msg) {
 test('OptikLink 自动登录保活', async () => {
   if (!DISCORD_TOKEN) throw new Error('❌ 缺少 DISCORD_TOKEN');
 
-  // ── 代理配置 ─────────────────────────────────────────
-  let proxyConfig = undefined;
-  if (GOST_PROXY) {
-    try {
-      const http = require('http');
-      await new Promise((resolve, reject) => {
-        const r = http.request({ host: '127.0.0.1', port: 8080, path: '/', method: 'GET', timeout: 3000 }, () => resolve());
-        r.on('error', reject); r.on('timeout', () => { r.destroy(); reject(); }); r.end();
-      });
-      proxyConfig = { server: GOST_PROXY };
-      console.log('🛡️ 使用代理');
-    } catch {
-      console.log('⚠️ 代理不可达，直连');
-    }
+  let localProxyUrl = null;
+  if (PROXY_URL) {
+    console.log('🔗 [0] 启动代理隧道...');
+    localProxyUrl = await anonymizeProxy(PROXY_URL);
+    console.log(`  代理: ${localProxyUrl}`);
   }
 
-  const browser = await chromium.launch({ headless: true, proxy: proxyConfig });
+  const launchOptions = { headless: true };
+  if (localProxyUrl) launchOptions.proxy = { server: localProxyUrl };
+
+  const browser = await chromium.launch(launchOptions);
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   });
@@ -97,10 +92,8 @@ test('OptikLink 自动登录保活', async () => {
       console.log('🔐 [3/5] 进入 Discord OAuth 授权页，自动授权...');
       await page.waitForTimeout(2000);
 
-      // 尝试点击 Authorize 按钮（可能需要多次）
       for (let i = 0; i < 8; i++) {
         if (!page.url().includes('discord.com')) break;
-
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
         await page.waitForTimeout(500);
 
@@ -135,51 +128,39 @@ test('OptikLink 自动登录保活', async () => {
     console.log('⏳ [4/5] 等待回调...');
     try {
       await page.waitForURL(url => url.toString().includes('optiklink'), { timeout: 15000 });
-    } catch {
-      // 可能已经在 optiklink 了
-    }
+    } catch {}
 
     const finalUrl = page.url();
     console.log(`📍 最终 URL: ${finalUrl}`);
-
-    if (!finalUrl.includes('optiklink')) {
-      throw new Error(`未回到 OptikLink，当前: ${finalUrl}`);
-    }
-
-    // 等页面加载完
     await page.waitForTimeout(5000);
 
     // 截图留证
     await page.screenshot({ path: 'test-results/optiklink-result.png', fullPage: true });
-    console.log('📸 截图已保存');
 
-    // ── 检查页面内容 ───────────────────────────────────────
-    const pageText = await page.evaluate(() => document.body.innerText.substring(0, 1000));
-    console.log(`📋 页面内容（前200字）: ${pageText.substring(0, 200)}`);
+    // ── 判断结果 ───────────────────────────────────────────
+    const isSuccess = !finalUrl.includes('/error/') && !finalUrl.includes('login');
+    const pageText = await page.evaluate(() => document.body.innerText.substring(0, 500));
 
-    // ── 通知 ──────────────────────────────────────────────
     const time = nowStr();
-    const msg = [
-      `✅ OptikLink 登录保活成功`,
-      `👤 用户: ${username}`,
-      `🕐 时间: ${time}`,
-      `📍 URL: ${finalUrl}`,
-    ].join('\n');
-    console.log(msg);
-    await sendTG(msg);
+    if (isSuccess) {
+      const msg = `✅ OptikLink 登录保活成功\n👤 用户: ${username}\n🕐 时间: ${time}\n📍 URL: ${finalUrl}`;
+      console.log(msg);
+      await sendTG(msg);
+    } else {
+      const msg = `❌ OptikLink 登录失败\n🕐 时间: ${time}\n📍 URL: ${finalUrl}\n📋 ${pageText.substring(0, 100)}`;
+      console.error(msg);
+      await sendTG(msg);
+      throw new Error(`登录失败: ${finalUrl}`);
+    }
 
   } catch (err) {
-    const time = nowStr();
-    const msg = [
-      `❌ OptikLink 登录失败`,
-      `🕐 时间: ${time}`,
-      `原因: ${err.message}`,
-    ].join('\n');
+    const msg = `❌ OptikLink 登录异常\n🕐 ${nowStr()}\n原因: ${err.message}`;
     console.error(msg);
     try { await page.screenshot({ path: 'test-results/optiklink-error.png', fullPage: true }); } catch {}
     await sendTG(msg);
     throw err;
   } finally {
     await browser.close();
+    if (localProxyUrl) await closeAnonymizedProxy(localProxyUrl);
   }
 });
