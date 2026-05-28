@@ -28,38 +28,7 @@ jobs:
           unzip -o v2ray-linux-64.zip -d /usr/local/bin/
           chmod +x /usr/local/bin/v2ray
 
-          # Generate v2ray config for SOCKS5 outbound
-          cat > /tmp/v2ray.json << 'V2EOF'
-          {
-            "inbounds": [
-              {
-                "port": 1080,
-                "listen": "127.0.0.1",
-                "protocol": "socks",
-                "settings": { "auth": "noauth" }
-              }
-            ],
-            "outbounds": [
-              {
-                "protocol": "socks",
-                "settings": {
-                  "servers": [
-                    {
-                      "address": "172.96.140.62",
-                      "port": 6288,
-                      "users": [
-                        {
-                          "user": "e7ea2949",
-                          "pass": "cf52afd48ea9"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-          V2EOF
+          echo '${{ secrets.V2RAY_CONFIG }}' > /tmp/v2ray.json
 
           /usr/local/bin/v2ray run -config /tmp/v2ray.json &
           sleep 3
