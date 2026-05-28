@@ -43,7 +43,7 @@ test('OptikLink 自动登录保活', async () => {
       prepareRequestFunction: () => ({ upstreamProxyUrl: upstreamUrl }),
     });
     await proxyServer.listen();
-    localProxyUrl = `socks5://127.0.0.1:${proxyServer.port}`;
+    localProxyUrl = `http://127.0.0.1:${proxyServer.port}`;
     console.log(`🔗 本地代理: ${localProxyUrl}`);
   }
 
