@@ -1,6 +1,6 @@
 // tests/optiklink.spec.js
 const { test, chromium } = require('@playwright/test');
-const { createServer } = require('proxy-chain');
+const proxyChain = require('proxy-chain');
 const https = require('https');
 
 const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || '').trim();
@@ -35,12 +35,15 @@ test('OptikLink 自动登录保活', async () => {
   // Parse proxy: "user:pass@host:port"
   let localProxyUrl, proxyServer;
   if (PROXY_URL) {
-    let url = PROXY_URL;
-    if (!url.startsWith('socks')) url = 'socks5://' + url;
-    console.log(`🔗 启动本地代理转发到: ${url}`);
-    proxyServer = createServer(url);
-    const port = await proxyServer.listen(0);
-    localProxyUrl = `socks5://127.0.0.1:${port}`;
+    let upstreamUrl = PROXY_URL;
+    if (!upstreamUrl.startsWith('socks')) upstreamUrl = 'socks5://' + upstreamUrl;
+    console.log(`🔗 启动本地代理转发到: ${upstreamUrl}`);
+    proxyServer = new proxyChain.Server({
+      port: 0,
+      prepareRequestFunction: () => ({ upstreamProxyUrl: upstreamUrl }),
+    });
+    await proxyServer.listen();
+    localProxyUrl = `socks5://127.0.0.1:${proxyServer.port}`;
     console.log(`🔗 本地代理: ${localProxyUrl}`);
   }
 
