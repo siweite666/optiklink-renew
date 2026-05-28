@@ -22,24 +22,15 @@ jobs:
           npm install
           npx playwright install chromium --with-deps
 
-      - name: Install & start v2ray
+      - name: Test proxy
         run: |
-          wget -q https://github.com/v2fly/v2ray-core/releases/download/v5.16.1/v2ray-linux-64.zip
-          unzip -o v2ray-linux-64.zip -d /usr/local/bin/
-          chmod +x /usr/local/bin/v2ray
-
-          # 从 Secret 写入配置
-          echo '${{ secrets.V2RAY_CONFIG }}' > /tmp/v2ray.json
-
-          /usr/local/bin/v2ray run -config /tmp/v2ray.json &
-          sleep 3
-          curl -s --socks5 127.0.0.1:1080 --connect-timeout 15 https://api.ipify.org || echo "proxy test failed"
+          curl -s --proxy "socks5://${{ secrets.PROXY_URL }}" --connect-timeout 15 https://api.ipify.org || echo "proxy test failed"
 
       - name: Run login script
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT: ${{ secrets.TG_CHAT_ID }},${{ secrets.TG_BOT_TOKEN }}
-          PROXY_URL: "socks5://127.0.0.1:1080"
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: npx playwright test
 
       - name: Upload screenshots
