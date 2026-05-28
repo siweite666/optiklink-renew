@@ -1,5 +1,6 @@
 // tests/optiklink.spec.js
 const { test, chromium } = require('@playwright/test');
+const { createServer } = require('proxy-chain');
 const https = require('https');
 
 const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || '').trim();
@@ -31,22 +32,19 @@ function sendTG(msg) {
 test('OptikLink 自动登录保活', async () => {
   if (!DISCORD_TOKEN) throw new Error('❌ 缺少 DISCORD_TOKEN');
 
-  // Parse proxy: "user:pass@host:port" or "socks5://user:pass@host:port"
-  function parseProxy(raw) {
-    if (!raw) return undefined;
-    let url = raw.trim();
+  // Parse proxy: "user:pass@host:port"
+  let localProxyUrl, proxyServer;
+  if (PROXY_URL) {
+    let url = PROXY_URL;
     if (!url.startsWith('socks')) url = 'socks5://' + url;
-    try {
-      const u = new URL(url);
-      const cfg = { server: `${u.protocol}//${u.hostname}:${u.port}` };
-      if (u.username) cfg.username = decodeURIComponent(u.username);
-      if (u.password) cfg.password = decodeURIComponent(u.password);
-      return cfg;
-    } catch { return { server: url }; }
+    console.log(`🔗 启动本地代理转发到: ${url}`);
+    proxyServer = createServer(url);
+    const port = await proxyServer.listen(0);
+    localProxyUrl = `socks5://127.0.0.1:${port}`;
+    console.log(`🔗 本地代理: ${localProxyUrl}`);
   }
-  const proxyConfig = parseProxy(PROXY_URL);
-  if (proxyConfig) console.log(`🔗 使用代理: ${proxyConfig.server}`);
 
+  const proxyConfig = localProxyUrl ? { server: localProxyUrl } : undefined;
   const browser = await chromium.launch({ headless: true, proxy: proxyConfig });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -169,5 +167,9 @@ test('OptikLink 自动登录保活', async () => {
     throw err;
   } finally {
     await browser.close();
+    if (proxyServer) {
+      proxyServer.close();
+      console.log('🔒 本地代理已关闭');
+    }
   }
 });
