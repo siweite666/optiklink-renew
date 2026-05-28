@@ -22,15 +22,54 @@ jobs:
           npm install
           npx playwright install chromium --with-deps
 
-      - name: Test proxy
+      - name: Install & start v2ray
         run: |
-          curl -s --proxy "socks5://${{ secrets.PROXY_URL }}" --connect-timeout 15 https://api.ipify.org || echo "proxy test failed"
+          wget -q https://github.com/v2fly/v2ray-core/releases/download/v5.16.1/v2ray-linux-64.zip
+          unzip -o v2ray-linux-64.zip -d /usr/local/bin/
+          chmod +x /usr/local/bin/v2ray
+
+          # Generate v2ray config for SOCKS5 outbound
+          cat > /tmp/v2ray.json << 'V2EOF'
+          {
+            "inbounds": [
+              {
+                "port": 1080,
+                "listen": "127.0.0.1",
+                "protocol": "socks",
+                "settings": { "auth": "noauth" }
+              }
+            ],
+            "outbounds": [
+              {
+                "protocol": "socks",
+                "settings": {
+                  "servers": [
+                    {
+                      "address": "172.96.140.62",
+                      "port": 6288,
+                      "users": [
+                        {
+                          "user": "e7ea2949",
+                          "pass": "cf52afd48ea9"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+          V2EOF
+
+          /usr/local/bin/v2ray run -config /tmp/v2ray.json &
+          sleep 3
+          curl -s --socks5 127.0.0.1:1080 --connect-timeout 15 https://api.ipify.org || echo "proxy test failed"
 
       - name: Run login script
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT: ${{ secrets.TG_CHAT_ID }},${{ secrets.TG_BOT_TOKEN }}
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          PROXY_URL: "socks5://127.0.0.1:1080"
         run: npx playwright test
 
       - name: Upload screenshots
