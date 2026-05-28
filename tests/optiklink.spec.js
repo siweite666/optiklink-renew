@@ -1,6 +1,5 @@
 // tests/optiklink.spec.js
 const { test, chromium } = require('@playwright/test');
-const proxyChain = require('proxy-chain');
 const https = require('https');
 
 const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || '').trim();
@@ -29,25 +28,12 @@ function sendTG(msg) {
   });
 }
 
-test('OptikLink 自动登录保活', async () => {
-  if (!DISCORD_TOKEN) throw new Error('❌ 缺少 DISCORD_TOKEN');
+test('OptikLink \u81ea\u52a8\u767b\u5f55\u4fdd\u6d3b', async () => {
+  if (!DISCORD_TOKEN) throw new Error('\u274c \u7f3a\u5c11 DISCORD_TOKEN');
 
-  // Parse proxy: "user:pass@host:port"
-  let localProxyUrl, proxyServer;
-  if (PROXY_URL) {
-    let upstreamUrl = PROXY_URL;
-    if (!upstreamUrl.startsWith('socks')) upstreamUrl = 'socks5://' + upstreamUrl;
-    console.log(`🔗 启动本地代理转发到: ${upstreamUrl}`);
-    proxyServer = new proxyChain.Server({
-      port: 0,
-      prepareRequestFunction: () => ({ upstreamProxyUrl: upstreamUrl }),
-    });
-    await proxyServer.listen();
-    localProxyUrl = `http://127.0.0.1:${proxyServer.port}`;
-    console.log(`🔗 本地代理: ${localProxyUrl}`);
-  }
+  const proxyConfig = PROXY_URL ? { server: PROXY_URL } : undefined;
+  if (proxyConfig) console.log(`\ud83d\udd17 \u4f7f\u7528\u4ee3\u7406: ${PROXY_URL}`);
 
-  const proxyConfig = localProxyUrl ? { server: localProxyUrl } : undefined;
   const browser = await chromium.launch({ headless: true, proxy: proxyConfig });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -56,50 +42,45 @@ test('OptikLink 自动登录保活', async () => {
   page.setDefaultTimeout(60000);
 
   try {
-    // ── 1. 预登录 Discord ────────────────────────────────
-    console.log('🔑 [1/5] 预登录 Discord...');
+    console.log('\ud83d\udd11 [1/5] \u9884\u767b\u5f55 Discord...');
     await page.goto('https://discord.com/login', { waitUntil: 'domcontentloaded' });
     await page.evaluate((token) => {
       const iframe = document.createElement('iframe');
       document.body.appendChild(iframe);
-      iframe.contentWindow.localStorage.setItem('token', `"${token}"`);
+      iframe.contentWindow.localStorage.setItem('token', `\"${token}\"`);
     }, DISCORD_TOKEN);
     await page.waitForTimeout(1000);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(5000);
 
-    console.log(`🔍 Discord URL: ${page.url()}`);
+    console.log(`\ud83d\udd0d Discord URL: ${page.url()}`);
     await page.screenshot({ path: 'test-results/discord-after-login.png' });
 
     if (page.url().includes('login')) {
-      // 可能需要更长时间加载
       await page.waitForTimeout(5000);
       if (page.url().includes('login')) {
-        throw new Error(`Discord Token 失效，URL: ${page.url()}`);
+        throw new Error(`Discord Token \u5931\u6548\uff0cURL: ${page.url()}`);
       }
     }
-    console.log('✅ Discord Token 有效');
+    console.log('\u2705 Discord Token \u6709\u6548');
 
-    // ── 2. 获取 Discord 用户名 ─────────────────────────────
-    let username = '未知';
+    let username = '\u672a\u77e5';
     try {
       username = await page.evaluate(async (tok) => {
         const res = await fetch('https://discord.com/api/v9/users/@me', { headers: { Authorization: tok } });
-        if (!res.ok) return '未知';
+        if (!res.ok) return '\u672a\u77e5';
         const d = await res.json();
-        return d.global_name || d.username || '未知';
+        return d.global_name || d.username || '\u672a\u77e5';
       }, DISCORD_TOKEN);
-      console.log(`👤 用户: ${username}`);
+      console.log(`\ud83d\udc64 \u7528\u6237: ${username}`);
     } catch {}
 
-    // ── 3. 打开 OptikLink 登录 ─────────────────────────────
-    console.log('🔗 [2/5] 访问 OptikLink 登录...');
+    console.log('\ud83d\udd17 [2/5] \u8bbf\u95ee OptikLink \u767b\u5f55...');
     await page.goto('https://optiklink.com/login', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(3000);
 
-    // ── 4. 处理 OAuth 授权 ─────────────────────────────────
     if (page.url().includes('discord.com/oauth2/authorize')) {
-      console.log('🔐 [3/5] OAuth 授权页，点击 Authorize...');
+      console.log('\ud83d\udd10 [3/5] OAuth \u6388\u6743\u9875\uff0c\u70b9\u51fb Authorize...');
       await page.waitForTimeout(2000);
 
       for (let i = 0; i < 8; i++) {
@@ -107,7 +88,7 @@ test('OptikLink 自动登录保活', async () => {
 
         const selectors = [
           'button:has-text("Authorize")',
-          'button:has-text("授权")',
+          'button:has-text("\u6388\u6743")',
           'button[type="submit"]',
           'button[class*="primary"]',
         ];
@@ -118,9 +99,9 @@ test('OptikLink 自动登录保活', async () => {
             const btn = page.locator(sel).last();
             if (!await btn.isVisible({ timeout: 1000 }).catch(() => false)) continue;
             const text = (await btn.innerText()).trim();
-            if (text.includes('取消') || text.includes('cancel') || text.includes('deny')) continue;
+            if (text.includes('\u53d6\u6d88') || text.includes('cancel') || text.includes('deny')) continue;
             if (await btn.isDisabled()) continue;
-            console.log(`  🔘 点击: "${text}"`);
+            console.log(`  \ud83d\udd18 \u70b9\u51fb: \"${text}\"`);
             await Promise.all([
               page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
               btn.click(),
@@ -134,8 +115,7 @@ test('OptikLink 自动登录保活', async () => {
       }
     }
 
-    // ── 5. 确认到达 OptikLink ──────────────────────────────
-    console.log('⏳ [4/5] 等待回调...');
+    console.log('\u23f3 [4/5] \u7b49\u5f85\u56de\u8c03...');
     if (page.url().includes('discord.com')) {
       try {
         await page.waitForURL(url => url.toString().includes('optiklink'), { timeout: 15000 });
@@ -144,35 +124,30 @@ test('OptikLink 自动登录保活', async () => {
 
     await page.waitForTimeout(5000);
     const finalUrl = page.url();
-    console.log(`📍 最终 URL: ${finalUrl}`);
+    console.log(`\ud83d\ucccd \u6700\u7ec8 URL: ${finalUrl}`);
     await page.screenshot({ path: 'test-results/optiklink-result.png', fullPage: true });
 
-    // ── 判断结果 ───────────────────────────────────────────
     const isError = finalUrl.includes('/error/') || (finalUrl.includes('/login') && finalUrl.includes('optiklink'));
     const time = nowStr();
 
     if (!isError) {
-      const msg = `✅ OptikLink 登录保活成功\n👤 用户: ${username}\n🕐 时间: ${time}\n📍 URL: ${finalUrl}`;
+      const msg = `\u2705 OptikLink \u767b\u5f55\u4fdd\u6d3b\u6210\u529f\n\ud83d\udc64 \u7528\u6237: ${username}\n\ud83d\udd50 \u65f6\u95f4: ${time}\n\ud83d\ucccd URL: ${finalUrl}`;
       console.log(msg);
       await sendTG(msg);
     } else {
       const pageText = await page.evaluate(() => document.body.innerText.substring(0, 200)).catch(() => '');
-      const msg = `❌ OptikLink 登录失败\n🕐 时间: ${time}\n📍 URL: ${finalUrl}\n📋 ${pageText}`;
+      const msg = `\u274c OptikLink \u767b\u5f55\u5931\u8d25\n\ud83d\udd50 \u65f6\u95f4: ${time}\n\ud83d\ucccd URL: ${finalUrl}\n\ud83d\udccb ${pageText}`;
       console.error(msg);
       await sendTG(msg);
-      throw new Error(`登录失败: ${finalUrl}`);
+      throw new Error(`\u767b\u5f55\u5931\u8d25: ${finalUrl}`);
     }
 
   } catch (err) {
-    console.error(`❌ 异常: ${err.message}`);
+    console.error(`\u274c \u5f02\u5e38: ${err.message}`);
     try { await page.screenshot({ path: 'test-results/optiklink-error.png', fullPage: true }); } catch {}
-    await sendTG(`❌ OptikLink 登录异常\n🕐 ${nowStr()}\n原因: ${err.message}`);
+    await sendTG(`\u274c OptikLink \u767b\u5f55\u5f02\u5e38\n\ud83d\udd50 ${nowStr()}\n\u539f\u56e0: ${err.message}`);
     throw err;
   } finally {
     await browser.close();
-    if (proxyServer) {
-      proxyServer.close();
-      console.log('🔒 本地代理已关闭');
-    }
   }
 });
