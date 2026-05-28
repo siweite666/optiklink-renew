@@ -31,8 +31,21 @@ function sendTG(msg) {
 test('OptikLink 自动登录保活', async () => {
   if (!DISCORD_TOKEN) throw new Error('❌ 缺少 DISCORD_TOKEN');
 
-  const proxyConfig = PROXY_URL ? { server: PROXY_URL } : undefined;
-  if (proxyConfig) console.log(`🔗 使用代理: ${PROXY_URL}`);
+  // Parse proxy: "user:pass@host:port" or "socks5://user:pass@host:port"
+  function parseProxy(raw) {
+    if (!raw) return undefined;
+    let url = raw.trim();
+    if (!url.startsWith('socks')) url = 'socks5://' + url;
+    try {
+      const u = new URL(url);
+      const cfg = { server: `${u.protocol}//${u.hostname}:${u.port}` };
+      if (u.username) cfg.username = decodeURIComponent(u.username);
+      if (u.password) cfg.password = decodeURIComponent(u.password);
+      return cfg;
+    } catch { return { server: url }; }
+  }
+  const proxyConfig = parseProxy(PROXY_URL);
+  if (proxyConfig) console.log(`🔗 使用代理: ${proxyConfig.server}`);
 
   const browser = await chromium.launch({ headless: true, proxy: proxyConfig });
   const context = await browser.newContext({
