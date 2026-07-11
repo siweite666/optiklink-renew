@@ -39,6 +39,10 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT: ${{ secrets.TG_CHAT_ID }},${{ secrets.TG_BOT_TOKEN }}
           PROXY_URL: "socks5://127.0.0.1:1080"
+          # Pterodactyl 开机检测（可选，不配就跳过）
+          PTERODACTYL_API_KEY: ${{ secrets.PTERODACTYL_API_KEY }}
+          PTERODACTYL_PANEL_URL: ${{ secrets.PTERODACTYL_PANEL_URL }}
+          PTERODACTYL_SERVER_ID: ${{ secrets.PTERODACTYL_SERVER_ID }}
         run: npx playwright test
 
       - name: Upload screenshots
