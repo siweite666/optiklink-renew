@@ -22,17 +22,49 @@ jobs:
           npm install
           npx playwright install chromium --with-deps
 
-      - name: Install & start v2ray
+      - name: Install & start xray
         run: |
-          wget -q https://github.com/v2fly/v2ray-core/releases/download/v5.16.1/v2ray-linux-64.zip
-          unzip -o v2ray-linux-64.zip -d /usr/local/bin/
-          chmod +x /usr/local/bin/v2ray
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) XRAY_ARCH="64" ;;
+            aarch64) XRAY_ARCH="arm64-v8a" ;;
+            *) echo "::error::Unsupported arch: $ARCH"; exit 1 ;;
+          esac
+          mkdir -p /tmp/xray
+          curl -sLfo /tmp/xray.zip "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${XRAY_ARCH}.zip"
+          unzip -o /tmp/xray.zip -d /tmp/xray/
+          chmod +x /tmp/xray/xray
 
-          echo '${{ secrets.V2RAY_CONFIG }}' > /tmp/v2ray.json
+          jq -n --arg uuid "$VMESS_UUID" --arg sni "$VMESS_SNI" --arg path "$VMESS_PATH" '{
+            log: {loglevel: "warning"},
+            inbounds: [
+              {tag: "socks-in", listen: "127.0.0.1", port: 1080, protocol: "socks", settings: {udp: true, auth: "noauth"}}
+            ],
+            outbounds: [{
+              tag: "proxy",
+              protocol: "vmess",
+              settings: {"vnext": [{"address": "cdns.doon.eu.org", "port": 443, "users": [{"id": $uuid, "alterId": 0, "security": "auto"}]}]},
+              streamSettings: {
+                "network": "ws",
+                "security": "tls",
+                "tlsSettings": {"serverName": $sni, "allowInsecure": false},
+                "wsSettings": {"path": $path, "headers": {"Host": $sni}}
+              }
+            }]
+          }' > /tmp/xray/xray.json
 
-          /usr/local/bin/v2ray run -config /tmp/v2ray.json &
-          sleep 3
-          curl -s --socks5 127.0.0.1:1080 --connect-timeout 15 https://api.ipify.org || echo "proxy test failed"
+          nohup /tmp/xray/xray run -c /tmp/xray/xray.json > /tmp/xray/xray.log 2>&1 &
+          sleep 4
+          if ! curl -s --max-time 10 --socks5 127.0.0.1:1080 -o /dev/null -w "%{http_code}" https://api.ipify.org | grep -q '^2'; then
+            echo "::error::xray proxy self-check failed"
+            cat /tmp/xray/xray.log
+            exit 1
+          fi
+          echo "✅ SOCKS5 proxy ready"
+        env:
+          VMESS_UUID: ${{ secrets.VMESS_UUID }}
+          VMESS_SNI: ${{ secrets.VMESS_SNI }}
+          VMESS_PATH: ${{ secrets.VMESS_PATH }}
 
       - name: Run login script
         env:
