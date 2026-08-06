@@ -22,49 +22,22 @@ jobs:
           npm install
           npx playwright install chromium --with-deps
 
-      - name: Install & start xray
-        run: |
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            x86_64) XRAY_ARCH="64" ;;
-            aarch64) XRAY_ARCH="arm64-v8a" ;;
-            *) echo "::error::Unsupported arch: $ARCH"; exit 1 ;;
-          esac
-          mkdir -p /tmp/xray
-          curl -sLfo /tmp/xray.zip "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${XRAY_ARCH}.zip"
-          unzip -o /tmp/xray.zip -d /tmp/xray/
-          chmod +x /tmp/xray/xray
-
-          jq -n --arg uuid "$VMESS_UUID" --arg sni "$VMESS_SNI" --arg path "$VMESS_PATH" '{
-            log: {loglevel: "warning"},
-            inbounds: [
-              {tag: "socks-in", listen: "127.0.0.1", port: 1080, protocol: "socks", settings: {udp: true, auth: "noauth"}}
-            ],
-            outbounds: [{
-              tag: "proxy",
-              protocol: "vmess",
-              settings: {"vnext": [{"address": "cdns.doon.eu.org", "port": 443, "users": [{"id": $uuid, "alterId": 0, "security": "auto"}]}]},
-              streamSettings: {
-                "network": "ws",
-                "security": "tls",
-                "tlsSettings": {"serverName": $sni, "allowInsecure": false},
-                "wsSettings": {"path": $path, "headers": {"Host": $sni}}
-              }
-            }]
-          }' > /tmp/xray/xray.json
-
-          nohup /tmp/xray/xray run -c /tmp/xray/xray.json > /tmp/xray/xray.log 2>&1 &
-          sleep 4
-          if ! curl -s --max-time 10 --socks5 127.0.0.1:1080 -o /dev/null -w "%{http_code}" https://api.ipify.org | grep -q '^2'; then
-            echo "::error::xray proxy self-check failed"
-            cat /tmp/xray/xray.log
-            exit 1
-          fi
-          echo "✅ SOCKS5 proxy ready"
+      - name: 🌐 设置sing-box代理转发 (SOCKS5 :1080)
+        continue-on-error: true
         env:
           VMESS_UUID: ${{ secrets.VMESS_UUID }}
           VMESS_SNI: ${{ secrets.VMESS_SNI }}
           VMESS_PATH: ${{ secrets.VMESS_PATH }}
+        run: |
+          echo "启动 sing-box 代理 (SOCKS5 inbound)"
+          # 用现有 VMess secrets 构造 vmess:// 链接作为 NODE_LINK
+          VMESS_JSON="{\"v\":\"2\",\"ps\":\"optiklink\",\"add\":\"cf.877774.xyz\",\"port\":\"443\",\"id\":\"$VMESS_UUID\",\"aid\":\"0\",\"scy\":\"auto\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"$VMESS_SNI\",\"path\":\"$VMESS_PATH\",\"tls\":\"tls\",\"sni\":\"$VMESS_SNI\"}"
+          NODE_LINK="vmess://$(echo -n "$VMESS_JSON" | base64 -w0)"
+          export NODE_LINK
+          wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh > /tmp/setup_proxy.sh
+          # 修复: 未认证的 GitHub API 请求会触发 rate limit，给 curl 加上认证头
+          sed -i 's|curl -s "https://api.github.com/repos/SagerNet/sing-box/releases"|curl -s -H "Authorization: Bearer ${{ github.token }}" "https://api.github.com/repos/SagerNet/sing-box/releases"|' /tmp/setup_proxy.sh
+          bash /tmp/setup_proxy.sh
 
       - name: Run login script
         env:
