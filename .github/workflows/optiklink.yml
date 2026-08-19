@@ -25,14 +25,10 @@ jobs:
       - name: 🌐 设置sing-box代理转发 (SOCKS5 :1080)
         continue-on-error: true
         env:
-          VMESS_UUID: ${{ secrets.VMESS_UUID }}
-          VMESS_SNI: ${{ secrets.VMESS_SNI }}
-          VMESS_PATH: ${{ secrets.VMESS_PATH }}
+          NODE_LINK: ${{ secrets.NODE_LINK }}
         run: |
           echo "启动 sing-box 代理 (SOCKS5 inbound)"
-          # 用现有 VMess secrets 构造 vmess:// 链接作为 NODE_LINK
-          VMESS_JSON="{\"v\":\"2\",\"ps\":\"optiklink\",\"add\":\"cf.877774.xyz\",\"port\":\"443\",\"id\":\"$VMESS_UUID\",\"aid\":\"0\",\"scy\":\"auto\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"$VMESS_SNI\",\"path\":\"$VMESS_PATH\",\"tls\":\"tls\",\"sni\":\"$VMESS_SNI\"}"
-          NODE_LINK="vmess://$(echo -n "$VMESS_JSON" | base64 -w0)"
+          # 直接用 NODE_LINK (vless/vmess 分享链接) 启动 sing-box
           export NODE_LINK
           wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh > /tmp/setup_proxy.sh
           # 修复: 未认证的 GitHub API 请求会触发 rate limit，给 curl 加上认证头
