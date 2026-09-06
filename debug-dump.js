@@ -19,6 +19,10 @@ const PROXY_URL = process.env.PROXY_URL || '';
   });
   const page = await ctx.newPage();
   page.setDefaultTimeout(60000);
+  // capture turnstile-related requests
+  const tsRequests = [];
+  page.on('request', r => { if (/turnstile|challenges\.cloudflare|hcaptcha|recaptcha/i.test(r.url())) tsRequests.push(r.url() + ' => ' + (r.resourceType()||'')); });
+  page.on('requestfailed', r => { if (/turnstile|cloudflare|challenges/i.test(r.url())) console.log('REQFAILED:', r.url(), r.failure()&&r.failure().errorText); });
   await page.goto('https://discord.com/login', { waitUntil: 'domcontentloaded' });
   await page.evaluate((token) => {
     const iframe = document.createElement('iframe');
@@ -44,38 +48,19 @@ const PROXY_URL = process.env.PROXY_URL || '';
     }
     if (!clicked) await page.waitForTimeout(2000);
   }
-  await page.waitForTimeout(4000);
-
-  // Fill math answer
-  const bodyText = await page.evaluate(() => document.body.innerText);
-  const m = bodyText.match(/What is\s+(-?\d+)\s*\+\s*(-?\d+)\s*\?/i);
-  let sum = null;
-  if (m) {
-    sum = parseInt(m[1],10)+parseInt(m[2],10);
-    await page.locator('input[name="math_answer"]').fill(String(sum));
-    console.log('FILLED math_answer =', sum);
-  }
-  // Watch turnstile token field
-  for (let i = 0; i < 30; i++) {
-    await page.waitForTimeout(2000);
-    const ts = await page.locator('input[name="cf-turnstile-response"]').inputValue().catch(() => '');
-    const tsLen = ts ? ts.length : 0;
-    const iframes = await page.locator('iframe').count();
-    const tsIframes = await page.locator('iframe[src*="turnstile"], iframe[title*="challenge"], iframe[src*="challenges.cloudflare"]').count();
-    console.log(`[${(i+1)*2}s] turnstile_len=${tsLen} total_iframes=${iframes} ts_iframes=${tsIframes}`);
-    if (tsLen > 20) break
-    }
-  const dump = await page.evaluate(() => {
-    return {
-      bodyText: document.body.innerText,
-      formHtml: (document.querySelector('form')||{}).outerHTML || 'NO FORM',
-    };
-  });
+  await page.waitForTimeout(6000);
+  const final = await page.evaluate(() => ({
+    url: location.href,
+    turnstileScriptLoaded: !!Array.from(document.scripts).find(s => /turnstile|challenges\.cloudflare/i.test(s.src)),
+    scripts: Array.from(document.scripts).map(s => (s.src||'(inline)').substring(0,120)),
+    hasCfWidget: !!document.querySelector('.cf-turnstile'),
+    widgetInner: (document.querySelector('.cf-turnstile')||{}).innerHTML || '',
+    cfResponseVal: (document.querySelector('input[name="cf-turnstile-response"]')||{}).value || '',
+  }));
   console.log('===FINAL===');
-  console.log(dump.bodyText);
-  console.log('FORMHTML_START');
-  console.log(dump.formHtml.substring(0,2000));
-  console.log('FORMHTML_END');
+  console.log(JSON.stringify(final, null, 2));
+  console.log('===TSREQS===');
+  console.log(tsRequests.join('\n') || '(none)');
   await browser.close();
   if (proxyServer) proxyServer.close();
 })();
