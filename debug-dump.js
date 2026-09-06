@@ -28,12 +28,8 @@ const PROXY_URL = process.env.PROXY_URL || '';
   await page.waitForTimeout(1000);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(5000);
-  console.log('DISCORD URL:', page.url());
   await page.goto('https://optiklink.com/login', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
-  console.log('LOGIN URL:', page.url());
-
-  // Handle OAuth authorize clicks
   for (let i = 0; i < 8; i++) {
     if (!page.url().includes('discord.com')) break;
     const btns = ['button:has-text("Authorize")','button:has-text("授权")','button[type="submit"]','button[class*="primary"]'];
@@ -48,25 +44,38 @@ const PROXY_URL = process.env.PROXY_URL || '';
     }
     if (!clicked) await page.waitForTimeout(2000);
   }
-  await page.waitForTimeout(3000);
-  console.log('FINAL URL:', page.url());
+  await page.waitForTimeout(4000);
 
-  // Dump CAPTCHA DOM
+  // Fill math answer
+  const bodyText = await page.evaluate(() => document.body.innerText);
+  const m = bodyText.match(/What is\s+(-?\d+)\s*\+\s*(-?\d+)\s*\?/i);
+  let sum = null;
+  if (m) {
+    sum = parseInt(m[1],10)+parseInt(m[2],10);
+    await page.locator('input[name="math_answer"]').fill(String(sum));
+    console.log('FILLED math_answer =', sum);
+  }
+  // Watch turnstile token field
+  for (let i = 0; i < 30; i++) {
+    await page.waitForTimeout(2000);
+    const ts = await page.locator('input[name="cf-turnstile-response"]').inputValue().catch(() => '');
+    const tsLen = ts ? ts.length : 0;
+    const iframes = await page.locator('iframe').count();
+    const tsIframes = await page.locator('iframe[src*="turnstile"], iframe[title*="challenge"], iframe[src*="challenges.cloudflare"]').count();
+    console.log(`[${(i+1)*2}s] turnstile_len=${tsLen} total_iframes=${iframes} ts_iframes=${tsIframes}`);
+    if (tsLen > 20) break
+    }
   const dump = await page.evaluate(() => {
-    const forms = Array.from(document.querySelectorAll('form')).map(f => ({
-      action: f.action, method: f.method,
-      inputs: Array.from(f.querySelectorAll('input')).map(i => ({ name: i.name, type: i.type, value: i.value, id: i.id, placeholder: i.placeholder })),
-    }));
-    const allInputs = Array.from(document.querySelectorAll('input')).map(i => ({ name: i.name, type: i.type, value: i.value, id: i.id }));
     return {
       bodyText: document.body.innerText,
-      forms,
-      allInputs,
-      buttons: Array.from(document.querySelectorAll('button')).map(b => b.innerText.trim()),
+      formHtml: (document.querySelector('form')||{}).outerHTML || 'NO FORM',
     };
   });
-  console.log('===DUMP===');
-  console.log(JSON.stringify(dump, null, 2));
+  console.log('===FINAL===');
+  console.log(dump.bodyText);
+  console.log('FORMHTML_START');
+  console.log(dump.formHtml.substring(0,2000));
+  console.log('FORMHTML_END');
   await browser.close();
   if (proxyServer) proxyServer.close();
 })();
