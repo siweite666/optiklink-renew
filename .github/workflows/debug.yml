@@ -1,0 +1,30 @@
+name: Debug CAPTCHA
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install
+        run: |
+          npm install
+          npx playwright install chromium --with-deps
+      - name: Proxy
+        continue-on-error: true
+        env:
+          NODE_LINK: ${{ secrets.NODE_LINK }}
+        run: |
+          export NODE_LINK
+          wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh > /tmp/setup_proxy.sh
+          sed -i 's|curl -s "https://api.github.com/repos/SagerNet/sing-box/releases"|curl -s -H "Authorization: Bearer ${{ github.token }}" "https://api.github.com/repos/SagerNet/sing-box/releases"|' /tmp/setup_proxy.sh
+          bash /tmp/setup_proxy.sh
+      - name: Debug
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          PROXY_URL: "socks5://127.0.0.1:1080"
+        run: node debug-dump.js
