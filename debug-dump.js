@@ -18,7 +18,7 @@ const PROXY_URL = process.env.PROXY_URL || '';
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   });
   const page = await ctx.newPage();
-  page.setDefaultTimeout(60000**>;
+  page.setDefaultTimeout(60000);
   await page.goto('https://discord.com/login', { waitUntil: 'domcontentloaded' });
   await page.evaluate((token) => {
     const iframe = document.createElement('iframe');
@@ -48,7 +48,7 @@ const PROXY_URL = process.env.PROXY_URL || '';
     }
     if (!clicked) await page.waitForTimeout(2000);
   }
-  await page.waitForTimeout(3000áo);
+  await page.waitForTimeout(3000);
   console.log('FINAL URL:', page.url());
 
   // Dump CAPTCHA DOM
