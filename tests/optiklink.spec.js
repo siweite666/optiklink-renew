@@ -21,6 +21,81 @@ function nowStr() {
   }).replace(/\//g, '-');
 }
 
+// === OptikLink 数学验证码处理 ===
+// OptikLink 在 Discord OAuth 回跳后会在 /login 显示一个"Quick Verification"页：
+//   "Please solve the simple math question below before continuing with Discord login.
+//    What is 4 + 9 ?   [answer input]   CONTINUE WITH LOGIN"
+// 解析算式、填入结果、点击按钮。
+async function solveMathCaptcha(page) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // 页面可能还在渲染，先等元素出现
+    try {
+      await page.waitForSelector('input', { timeout: 3000 });
+    } catch { return false; }
+
+    const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
+    if (!bodyText.includes('Quick Verification') && !bodyText.includes('CONTINUE WITH LOGIN')) {
+      return false;
+    }
+
+    // 提取算式: "What is 4 + 9 ?"
+    const m = bodyText.match(/What is\s+(-?\d+)\s*\+\s*(-?\d+)\s*\?/i);
+    if (!m) {
+      console.log('  🧮 检测到验证页但无法解析算式');
+      await page.waitForTimeout(1500);
+      continue;
+    }
+    const sum = parseInt(m[1], 10) + parseInt(m[2], 10);
+    console.log(`  🧮 数学验证: ${m[1]} + ${m[2]} = ${sum}`);
+
+    // 填入答案 —— 用最可能的 input（验证页上通常只有一个可输入的 input）
+    const inputs = page.locator('input');
+    const cnt = await inputs.count();
+    let filled = false;
+    for (let i = 0; i < cnt; i++) {
+      const el = inputs.nth(i);
+      const vis = await el.isVisible().catch(() => false);
+      if (!vis) continue;
+      const t = (await el.inputValue().catch(() => '')).trim();
+      const type = await el.getAttribute('type').catch(() => '');
+      // 跳过明显非答案输入（隐藏/只读/已有内容/非文本类型）
+      if (t || ['hidden', 'checkbox', 'radio', 'button', 'submit'].includes(type)) continue;
+      await el.fill(String(sum)).catch(() => {});
+      filled = true;
+      console.log(`  ⌨️  已填入答案到 input[${i}]`);
+      break;
+    }
+    if (!filled) {
+      console.log('  ⚠️  未找到可填的答案输入框');
+      await page.waitForTimeout(1500);
+      continue;
+    }
+
+    // 点击 CONTINUE WITH LOGIN
+    const contBtn = page.locator('button:has-text("CONTINUE WITH LOGIN"), button:has-text("Continue with Login")').first();
+    if (await contBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await Promise.all([
+        page.waitForNavigation({ timeout: 20000 }).catch(() => {}),
+        contBtn.click(),
+      ]);
+    } else {
+      // 备用：点击页面主按钮
+      await page.keyboard.press('Enter');
+    }
+    await page.waitForTimeout(3000);
+
+    // 校验是否通过
+    const afterText = await page.evaluate(() => document.body.innerText).catch(() => '');
+    if (!afterText.includes('CONTINUE WITH LOGIN')) {
+      console.log('  ✅ 数学验证通过');
+      return true;
+    }
+    console.log('  🔄 验证未通过，重试...');
+    await page.waitForTimeout(1500);
+  }
+  return false;
+}
+
 function sendTG(msg) {
   return new Promise(resolve => {
     if (!TG_CHAT_ID || !TG_TOKEN) return resolve();
@@ -264,7 +339,15 @@ test('OptikLink 自动登录保活', async ({}, testInfo) => {
       }
     }
 
-    // ── 5. 确认到达 OptikLink ──────────────────────────────
+    // ── 4.5 处理 OptikLink 数学验证码（Quick Verification）────────
+    // OAuth 回跳后可能落在 /login 并显示数学验证。解决后才会真正登录。
+    await page.waitForTimeout(2000);
+    const solved = await solveMathCaptcha(page);
+    if (solved) {
+      console.log('🧮 [3.5/5] 数学验证已解决，继续登录');
+    }
+
+    // ── 5. 确认到达 OptikLink ──────────────────────────────────────
     console.log('⏳ [4/5] 等待回调...');
     if (page.url().includes('discord.com')) {
       try {
